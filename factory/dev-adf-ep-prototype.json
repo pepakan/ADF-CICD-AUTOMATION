@@ -1,0 +1,9 @@
+{
+	"name": "dev-adf-ep-prototype",
+	"location": "southindia",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "1296139c-c833-44c4-8012-3691d0874697",
+		"tenantId": "52b6825c-d525-4a07-b5f1-a3f09bf06e6a"
+	}
+}
