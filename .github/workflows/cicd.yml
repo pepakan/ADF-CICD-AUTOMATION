@@ -1,0 +1,119 @@
+name: "Export and Deploy"
+
+on:
+  push:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2.4.0
+        
+      - name: Install ADF package
+        run: npm install
+
+      - name: Export
+        run: npm run build export ${GITHUB_WORKSPACE} /subscriptions/${{ secrets.SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.RESOURCE_GROUP_NAME }}/providers/Microsoft.DataFactory/factories/${{ secrets.FACTORY_NAME }} "ArmTemplate"
+        
+      - name: Upload ARM Template as Artifact
+        uses: actions/upload-artifact@v2.2.4
+        with:
+          name: ArmTemplate
+          path: ArmTemplate
+          
+  development:
+    runs-on: ubuntu-latest
+    environment: development 
+    needs: [export]
+    
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Get ARM Template
+        uses: actions/download-artifact@v2.0.10 
+        with: 
+          name: ArmTemplate
+          path: ArmTemplate
+          
+      - name: Login to Azure Subscription
+        uses: Azure/login@v1 
+        with: 
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+          
+      - name: Pre-Deployment Script
+        uses: azure/powershell@v1
+        with:
+          inlineScript: ./.github/workflows/scripts/cicd.ps1 -armTemplate "./ArmTemplate/ARMTemplateForFactory.json" -ResourceGroupName ${{ secrets.RESOURCE_GROUP_NAME }} -DataFactoryName ${{ secrets.FACTORY_NAME }} -predeployment $true -deleteDeployment $false
+          azPSVersion: 'Latest'
+          
+      - name: Deploy to ADF-Dev
+        uses: Azure/arm-deploy@v1
+        with: 
+          template: ./ArmTemplate/ARMTemplateForFactory.json
+          parameters: factoryName=${{ secrets.FACTORY_NAME }}
+          resourceGroupName: ${{ secrets.RESOURCE_GROUP_NAME }}
+          
+      - name: Post-Deployment Script
+        uses: azure/powershell@v1
+        with:
+          inlineScript: ./.github/workflows/scripts/cicd.ps1 -armTemplate "./ArmTemplate/ARMTemplateForFactory.json" -ResourceGroupName ${{ secrets.RESOURCE_GROUP_NAME }} -DataFactoryName ${{ secrets.FACTORY_NAME }} -predeployment $false -deleteDeployment $true
+          azPSVersion: 'Latest'
+          
+  production:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [development]
+    
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Get ARM Template
+        uses: actions/download-artifact@v2.0.10 
+        with: 
+          name: ArmTemplate
+          path: ArmTemplate
+          
+      - name: Login to Azure Subscription
+        uses: Azure/login@v1 
+        with: 
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+          
+      - name: Pre-Deployment Script
+        uses: azure/powershell@v1
+        with:
+          inlineScript: ./.github/workflows/scripts/cicd.ps1 -armTemplate "./ArmTemplate/ARMTemplateForFactory.json" -ResourceGroupName ${{ secrets.RESOURCE_GROUP_NAME }} -DataFactoryName ${{ secrets.FACTORY_NAME }} -predeployment $true -deleteDeployment $false
+          azPSVersion: 'Latest'
+        
+      - name: Deploy to ADF-Product
+        uses: Azure/arm-deploy@v1
+        with: 
+          template: ./ArmTemplate/ARMTemplateForFactory.json
+          parameters: factoryName=${{ secrets.FACTORY_NAME }}
+          resourceGroupName: ${{ secrets.RESOURCE_GROUP_NAME }}
+          
+      - name: Post-Deployment Script
+        uses: azure/powershell@v1
+        with:
+          inlineScript: ./.github/workflows/scripts/cicd.ps1 -armTemplate "./ArmTemplate/ARMTemplateForFactory.json" -ResourceGroupName ${{ secrets.RESOURCE_GROUP_NAME }} -DataFactoryName ${{ secrets.FACTORY_NAME }} -predeployment $false -deleteDeployment $true
+          azPSVersion: 'Latest'
+          
+      - name: Zip Artifacts
+        run: zip -r armtemplate.zip ArmTemplate
+          
+      - uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifacts: "armtemplate.zip"
+          tag: "v1.0.0"
+          commit: "main"
+          token: ${{ secrets.GITHUB_TOKEN }}
